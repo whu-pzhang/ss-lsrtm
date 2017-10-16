@@ -13,6 +13,10 @@ except:
     sys.path.append(os.path.join(srcroot, 'framework'))
     import bldutil
     env = bldutil.Debug()  # Debugging flags for compilers
+    # add -pg to enable gprof
+    env.Prepend(CCFLAGS=['-pg'])
+    env.Prepend(LINKFLAGS=['-pg'])
+    ###############################
     bindir = libdir = pkgdir = None
     SConscript(os.path.join(srcroot, 'su/lib/SConstruct'))
 
@@ -28,6 +32,7 @@ lsrtmse
 
 # Python targets
 targets.py = '''
+setspk
 '''
 
 dynlib = env.get('DYNLIB', '')
