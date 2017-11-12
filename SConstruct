@@ -21,6 +21,7 @@ targets = bldutil.UserSconsTargets()
 # C mains
 targets.c = '''
 prertm2d_v03
+prertm2d_v04
 lsprertm2d
 lsrtmse
 mod2refl
