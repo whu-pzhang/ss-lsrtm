@@ -1,0 +1,503 @@
+# —*- coding=utf-8 -*-
+from rsf.proj import *
+from rsf.recipes import fdmod
+
+
+def igrey3d(par):
+    return '''
+    byte allpos=n gainpanel=all |
+    grey3 flat=n frame1=2000 frame2=200 frame3=10
+    title= titlesz=10 font=3
+    label2=Trace unit2=km lable3=Shot unit3= point1=0.85 point2=0.85
+    labelsz=5
+    %s
+    ''' % par
+
+
+def igrey2d(par):
+    'grey 2d image for RTM images'
+    return '''
+    grey title=
+    scalebar=y bartype=v barwidth=0.2
+    screenratio=0.7 screenht=6
+    labelsz=5 labelfat=2
+    %s
+    ''' % par
+
+
+def mgrey2d(par):
+    'grey 2d image for encoded and cross-talk matrix images'
+    return '''
+    grey gainpanel=a bias=0.5
+    screenht=10 font=3
+    wantscalebar=n parallel2=n labelsz=5 labelfat=3 titlesz=10 titlefat=3
+    %s
+    ''' % par
+
+
+par_ = dict(nx=2301, ox=0, dx=0.004, lx='x', ux='km',
+            nz=751, oz=0, dz=0.004, lz='z', uz='km',
+            )
+
+# Download velocity model
+Fetch('marmvel.hh', 'marm', usedatapath=False)
+Flow('vel', 'marmvel.hh',
+     '''
+    dd form=native | put d1=%(dz)f d2=%(dx)f
+    label1=%(lz)s  unit1=%(uz)s label2=%(lx)s unit2=%(ux)s title= |
+    scale rscale=0.001 |
+    window j1=3 j2=3
+    out=stdout
+    ''' % par_)
+
+# 将模型拓展20个网格点
+# Flow('marm_vel', 'zvel',
+#      '''
+#     window n1=20 | math output=1.5 | cat axis=1 ${SOURCE}
+#     ''')
+
+# parameters dict
+par = dict(
+    nx=1151, ox=0, dx=0.008, lx='x', ux='km',
+    nz=376,  oz=0, dz=0.008, lz='z', uz='km',
+    nt=5000, ot=0, dt=0.0008, lt='t', ut='s',
+    kt=100,
+    nb=30,
+    freq=15
+)
+
+# extend model
+rtmpar = dict(
+    lft=0,
+    rht=0,
+    top=20,
+    bot=20
+)
+par['nx'] = par['nx'] + rtmpar['lft'] + rtmpar['rht']
+par['nz'] = par['nz'] + rtmpar['top'] + rtmpar['bot']
+par['ox'] = par['ox'] - rtmpar['lft'] * par['dx']
+par['oz'] = par['oz'] - rtmpar['top'] * par['dz']
+
+fdmod.param(par)
+
+winpar = 'min1=0 max1=3 min2=0 n1=376 n2=1151'
+
+Flow('marm-vel-ext', 'marm-vel',
+     'pad2 left=%(lft)d right=%(rht)d top=%(top)d bottom=%(bot)d' % rtmpar)
+Plot('marm-vel-ext', fdmod.cgrey('color=j allpos=y bias=1.5 title=', par))
+
+Result('marm-vel', 'marm-vel-ext',
+       'window %s |' % winpar +
+       igrey2d('color=i mean=y wantaxis2=y scalebar=y bartype=v \
+        barwidth=0.2 barunit=km/s barlabel=Velocity'))
+
+# creat constant velocity for substract direct wave
+cut = 2
+Flow('marm-vel-con', 'marm-vel-ext', 'window n1=%d | pad2 bottom=%d'
+     % (cut, par['nz'] - cut))
+
+
+# Smoothed velocity
+Flow('marm-vel-ext-smo', 'marm-vel-ext', 'smooth rect1=10 rect2=10 repeat=2')
+
+# Density
+Flow('marm-dens-ext', 'marm-vel-ext', 'math output=1')
+
+# compute reflectivity
+Flow('marm-ref', 'marm-vel',
+     '''
+    depth2time velocity=$SOURCE nt=%(nt)d dt=%(dt)f |
+    ai2refl |
+    ricker1 frequency=%(freq)d |
+    time2depth velocity=$SOURCE
+    ''' % par)
+Result('marm-ref', igrey2d(
+    'title= wantscalebar=y minval=-0.02 maxval=0.02 pclip=99\
+    barlabel=Amplitude') + winpar)
+
+
+#
+# source Wavelet
+# Flow('marm_wlt', None,
+#      '''
+#      spike n1=%(nt)d o1=0 d1=%(dt)f k1=400 mag=1 nsp=1 |
+#      ricker1 frequency=15 |
+#      window n1=%(nt)d |
+#      scale axis=123 |
+#      put label1=%(lt)s unit1=%(ut)s
+#      ''' % par)
+#
+fdmod.wavelet('wlt_', par['freq'], par)
+Flow('marm-wlt', 'wlt_', 'transp')
+
+Result('marm-wlt', 'window n2=2000 |' + fdmod.waveplot('', par))
+# =============================================================================
+# Conventional RTM result(FD and born data)
+# for comparetion
+#
+# 3. 炮点和接收点坐标设置
+# ======================================================================
+# 水平接收点坐标(z=0)
+jrx = 1
+par['drx'] = jrx * par['dx']
+par['orx'] = par['ox']    # origin
+par['nrx'] = par['nx'] / jrx   # number
+par['rz'] = par['oz'] + 0.025
+
+Flow('rx', None, 'math n1=%(nrx)d d1=%(drx)f o1=%(orx)f output=x1' % par)
+Flow('rz', None, 'math n1=%(nrx)d d1=%(drx)f o1=%(orx)f output=%(rz)f' % par)
+Flow('rxz', 'rx rz', 'cat axis=2 space=n ${SOURCES[1]} | transp ')
+Plot('rxz', fdmod.rrplot('', par))
+Result('rxz', ['marm-vel-ext', 'rxz'], 'Overlay')
+
+# 水平炮点坐标
+par['jsx'] = 18
+par['dsx'] = par['dx'] * par['jsx']
+par['osx'] = par['ox'] + 0.1
+par['nsx'] = 60
+par['sz'] = par['oz'] + 0.01
+
+Flow('sx', None, 'math n1=%(nsx)d d1=%(dsx)f o1=%(osx)f output=x1' % par)
+Flow('sz', None, 'math n1=%(nsx)d d1=%(dsx)f o1=%(osx)f output=%(sz)f' % par)
+Flow('sxz', 'sx sz', 'cat axis=2 space=n ${SOURCES[1]} | transp')
+Plot('sxz', fdmod.ssplot('', par))
+Result('sxz', ['marm-vel-ext', 'sxz'], 'Overlay')
+
+for i in xrange(par['nsx']):
+    tag = '-%02d' % (i + 1)
+    sx = par['osx'] + i * par['jsx'] * par['dx']
+    Flow('sx' + tag, None, 'math n1=1 output=%f' % sx)
+    Flow('sz' + tag, None, 'math n1=1 output=%f' % par['sz'])
+    Flow('sxz' + tag, ['sx' + tag, 'sz' + tag], 'cat axis=1 ${SOURCES[1]}')
+
+    shot = 'shot' + tag
+
+    # fdmod.awefd(shot1, 'wfl' + tag, 'marm_wlt', 'marm_vel',
+    #             'marm_dens', 'sxz' + tag, 'rr', 'jdata=1', par)
+    Flow(shot, ['marm-wlt', 'marm-vel-ext', 'marm-dens-ext', 'sxz' + tag, 'rxz'],
+         '''
+         awefd2d verb=y free=y snap=n dabc=y nb=%(nb)d hybridbc=y fdorder=4
+         vel=${SOURCES[1]} den=${SOURCES[2]}
+         sou=${SOURCES[3]} rec=${SOURCES[4]} jdata=1 |
+         transp
+         ''' % par)
+
+
+shotlst = list(map(lambda x: 'shot-%02d' %
+                   x, [i + 1 for i in xrange(par['nsx'])]))
+
+Flow('marm-data', shotlst,
+     '''
+    cat axis=3 ${SOURCES[1:%d]} | put d3=1 o3=1
+    ''' % len(shotlst))
+
+Result('marm-data', igrey3d('title frame1=2500 frame2=550 frame3=30'))
+
+# 4. RTM单炮成像
+# ======================================================================
+# prog = Program(Split('Mprertm2d.c prertm2d.c'), PROGSUFFIX='.x')
+# exe = str(prog[0])
+
+# conventional RTM program
+prog1 = Program(Split('../SRC/Mprertm2d_v02.c ../SRC/prertm2d_v02.c'),
+                PROGSUFFIX='.x')
+exe1 = str(prog1[0])
+
+# RTM with source illumination
+prog11 = Program(Split('../SRC/Mprertm2d_v03.c ../SRC/prertm2d_v03.c'),
+                 PROGSUFFIX='.x')
+exe11 = str(prog11[0])
+
+# LSRTM program
+prog2 = Program(Split('../SRC/Mlsprertm2d_v02.c ../SRC/lsprertm2d_v02.c \
+                       ../SRC/laplac2.c'), PROGSUFFIX='.x')
+exe2 = str(prog2[0])
+
+# LSRTM with regularization
+prog3 = Program(Split('../SRC/Mlsrtmsr.c ../SRC/lsrtmsr.c \
+                ../SRC/laplac2.c'),
+                PROGSUFFIX='.x',
+                LIBS=['rsfpwd', 'rsf', 'm', 'gomp', 'cblas'])
+exe3 = str(prog3[0])
+# ==================================================
+
+# Flow('marm-img', ['marm-data', 'marm-wlt', 'marm-vel-ext-smo',
+#                   'sxz', 'rxz', exe1],
+#      '''
+#     ${SOURCES[5].abspath} verb=y adj=y nb=100
+#     wlt=${SOURCES[1]} vel=${SOURCES[2]} sou=${SOURCES[3]} rec=${SOURCES[4]}
+#     ''')
+# Result('marm-img',
+#        'window %s | laplac | igrad |' % winpar +
+#        igrey2d('color=i scalebar=n pclip=99'))
+
+Flow('marm-img-illum', ['marm-data', 'marm-wlt', 'marm-vel-ext-smo',
+                        'sxz', 'rxz', exe11],
+     '''
+    ${SOURCES[5].abspath} verb=y adj=y nb=100
+    wlt=${SOURCES[1]} vel=${SOURCES[2]} sou=${SOURCES[3]} rec=${SOURCES[4]}
+    ''')
+Result('marm-img-illum',
+       'window %s | laplac | math output=1e4*input|' % winpar +
+       igrey2d('color=i wantscalebar=y pclip=99 minval=-0.05 maxval=0.05\
+       barlabel=Amplitude barunit="*10e-4"'))
+
+Result('marm-img-wgt', 'marm-img-illum',
+       'window %s | laplac | smooth rect1=5 rect2=1 | bandpass flo=5|' % winpar +
+       igrey2d('color=i wantscalebar=y pclip=99'))
+
+Result('marm-img-win', 'marm-img-illum',
+       'window min1=0.2 max1=1.5 min2=4 max2=7 | laplac | smooth rect1=5 rect2=1 | bandpass flo=5|' +
+       igrey2d('color=i scalebar=n pclip=99'))
+# ------------------
+Flow(['marm-invs-img', 'marm-invs-img-err'],
+     ['marm-data',
+      'marm-wlt',
+      'marm-vel-ext-smo',
+      'sxz',
+      'rxz',
+      exe2],
+     '''
+     ${SOURCES[5].abspath} verb=y nb=100 nss=%d niter=2
+     wlt=${SOURCES[1]} vel=${SOURCES[2]} sou=${SOURCES[3]} rec=${SOURCES[4]}
+     error=${TARGETS[1]}
+     ''' % par['nsx'])
+Result('marm-invs-img',
+       'window %s | ' % winpar +
+       igrey2d('color=i wantscalebar=y pclip=99'))
+
+# 同时震源
+# 方案1：每个超级炮中包含两个单炮
+bn = 2  # 混合度为2
+ns = len(shotlst)   # 总的单炮数
+nss = (int)(ns / bn)    # supergather个数
+jss = nss
+#
+data = 'marm-b%ddata' % bn
+rtmimg = 'marm-b%dimg' % bn
+lsimg = 'marm-invs-b%dimg' % bn
+lssrimg0 = 'marm-reg0-b%dimg' % bn
+
+for i in xrange(nss):
+    tag = '-%02d' % (i + 1)
+    bshot = 'marm-b%ddata' % bn + tag
+    Flow(bshot, shotlst,
+         'add  scale=1,1 ${SOURCES[%d]} ${SOURCES[%d]}' % (i, i + jss),
+         stdin=0)
+
+bshotlst = list(map(lambda x: 'marm-b%ddata-%02d' % (bn, x),
+                    [i + 1 for i in xrange(nss)]))
+
+Flow('marm-b%ddata' % bn, bshotlst,
+     'cat axis=3 ${SOURCES[1:%d]} | put d3=1 o3=1' % len(bshotlst))
+
+Result('marm-b%ddata' % bn, igrey3d('title frame1=2500 frame2=550 frame3=15'))
+
+# 重新组织炮点信息
+bshotlst = 'b%ddatalst' % bn
+bshotlst = []
+for i in xrange(nss):
+    for j in xrange(bn):
+        bshotlst.append('sx-%02d' % (i + 1 + j * jss))
+Flow('sx-b%d' % bn, bshotlst,
+     'cat axis=1 ${SOURCES[0:%d]} | put d1=%f o1=%f' %
+     (len(bshotlst), par['dsx'], par['osx']), stdin=0)
+
+Flow('sxz-b%d' % bn, ['sx-b%d' % bn, 'sz'],
+     'cat axis=2 ${SOURCES[1]} | transp')
+
+# ------------------
+Flow(['marm-b%dimg' % bn],
+     ['marm-b%ddata' % bn, 'marm-wlt', 'marm-vel-ext-smo',
+      'sxz-b%d' % bn, 'rxz', exe11],
+     '''
+      ${SOURCES[5].abspath} verb=y adj=y nb=100 nss=%d
+      wlt=${SOURCES[1]} vel=${SOURCES[2]} sou=${SOURCES[3]}
+      rec=${SOURCES[4]}
+      ''' % nss)
+
+Result('marm-b%dimg' % bn,
+       'window %s | laplac| math output=1e4*input |' % winpar +
+       igrey2d('color=i wantscalebar=y pclip=99 minval=-0.05 maxval=0.05\
+       barlabel=Amplitude barunit="*10e-4"'))
+# -----------------------------
+# LSRTM
+Flow(['marm-invs-b%dimg' % bn, 'marm-invs-b%dimg-err' % bn],
+     ['marm-b%ddata' % bn,
+      'marm-wlt',
+      'marm-vel-ext-smo',
+      'sxz-b%d' % bn,
+      'rxz',
+      exe2],
+     '''
+     ${SOURCES[5].abspath} verb=y nb=100 nss=%d niter=5
+     wlt=${SOURCES[1]} vel=${SOURCES[2]} sou=${SOURCES[3]} rec=${SOURCES[4]}
+     error=${TARGETS[1]}
+     ''' % nss)
+Result('marm-invs-b%dimg' % bn,
+       'window %s | math output=1e7*input |' % winpar +
+       igrey2d('color=i parallel2=y wantscalebar=y pclip=99 minval=-0.02 \
+       maxval=0.02 barlabel=Amplitude barunit="*10e-7"'))
+
+# LSRTM-SR
+# Estimated dip from true velocity model
+dip0 = 'marm-vel-dip'
+Flow(dip0, 'marm-vel-ext',
+     'fdip verb=n rect1=10 rect2=10')
+Result(dip0, igrey2d('color=j') + winpar)
+
+Flow([lssrimg0, lssrimg0 + '-err'],
+     [data, dip0,
+      'marm-wlt',
+      'marm-vel-ext-smo',
+      'sxz-b%d' % bn,
+      'rxz',
+      exe3],
+     '''
+     ${SOURCES[6].abspath} verb=y nb=100 nss=%d
+     niter=5 radius=3 order=2 eps=0.01
+     dip=${SOURCES[1]} error=${TARGETS[1]}
+     wlt=${SOURCES[2]} vel=${SOURCES[3]} sou=${SOURCES[4]} rec=${SOURCES[5]}
+     ''' % nss)
+
+Result(lssrimg0,
+       'window %s | math output=1e7*input |' % winpar +
+       igrey2d('wantscalebar=y color=i pclip=99'))
+
+# Estimated dip from RTM image
+dip0 = 'marm-b%ddip' % bn
+Flow(dip0, 'marm-b%dimg' % bn,
+     'laplac | fdip verb=n rect1=10 rect2=10')
+Result(dip0, igrey2d('color=j pclip=99') + winpar)
+
+lssrimg0 = 'marm-reg1-b%dimg' % bn
+
+Flow([lssrimg0, lssrimg0 + '-err'],
+     [data, dip0,
+      'marm-wlt',
+      'marm-vel-ext-smo',
+      'sxz-b%d' % bn,
+      'rxz',
+      exe3],
+     '''
+     ${SOURCES[6].abspath} verb=y nb=100 nss=%d
+     niter=5 radius=5 order=2 eps=0.01
+     dip=${SOURCES[1]} error=${TARGETS[1]}
+     wlt=${SOURCES[2]} vel=${SOURCES[3]} sou=${SOURCES[4]} rec=${SOURCES[5]}
+     ''' % nss)
+
+Result(lssrimg0,
+       'window %s | math output=5e7*input |' % winpar +
+       igrey2d('color=i scalebar=y pclip=99 minval=-0.02 maxval=0.02\
+       barlabel=Amplitude barunit="*10e-7"'))
+
+Flow('marm-reg1-b%dimg-dip' % bn, lssrimg0, 'fdip rect1=10 rect2=10')
+Result('marm-reg1-b%dimg-dip' % bn, igrey2d('color=j pclip=99') + winpar)
+
+# -------
+Flow(['marm-reg-b%dimg' % bn, 'marm-reg-b%dimg-err' % bn],
+     [data, dip0,
+      'marm-wlt',
+      'marm-vel-ext-smo',
+      'sxz-b%d' % bn,
+      'rxz',
+      exe3],
+     '''
+       ${SOURCES[6].abspath} verb=y nb=100 nss=%d
+       niter=1 radius=5 order=2 eps=0.01
+       dip=${SOURCES[1]} error=${TARGETS[1]}
+       wlt=${SOURCES[2]} vel=${SOURCES[3]} sou=${SOURCES[4]} rec=${SOURCES[5]}
+       ''' % nss)
+
+Result('marm-reg-b%dimg' % bn,
+       'window %s | math output=1e5*input |' % winpar +
+       igrey2d('color=i wantscalebar=y pclip=99'))
+
+Result('marm-test-img', 'marm-invs-img',
+       'sfpwsmooth dip=marm-vel-dip.rsf ns=5 | window %s | math output=1e5*input |' % winpar
+       + igrey2d('color=i scalebar=y pclip=99'))
+
+# Weighted Structure-echancing LSRTM
+Flow('marm-vel-ext-dip', 'marm-vel-ext', 'fdip rect1=3 rect2=3 verb=n')
+Result('marm-vel-ext-dip', igrey2d('color=j'))
+
+prog4 = Program('../SRC/Mdip2wgt.c', PROGSUFFIX='.x')
+Flow('marm-vel-ext-wgt', ['marm-vel-ext-dip', prog4], '${SOURCES[1].abspath}')
+
+# -----------------------
+# zoom window compare
+zoompar = 'min1=0.2 max1=1.5 min2=4 max2=7'
+
+Result('marm-img-rawzoom', 'marm-img-illum',
+       'window %s | laplac |' % zoompar + igrey2d('color=i scalebar=n pclip=99'))
+Result('marm-b2img-zoom', 'marm-b2img',
+       'window %s | laplac |' % zoompar + igrey2d('color=i scalebar=n pclip=99'))
+Result('marm-invs-b2img-zoom', 'marm-invs-b2img',
+       'window %s | ' % zoompar + igrey2d('color=i scalebar=n pclip=99'))
+Result('marm-reg0-b2img-zoom', 'marm-reg0-b2img',
+       'window %s |' % zoompar + igrey2d('color=i scalebar=n pclip=99'))
+Result('marm-reg1-b2img-zoom', 'marm-reg1-b2img',
+       'window %s | ' % zoompar + igrey2d('color=i scalebar=n pclip=99'))
+Result('marm-reg-b2img-zoom', 'marm-reg-b2img',
+       'window %s | ' % zoompar + igrey2d('color=i scalebar=n pclip=99'))
+
+Result('marm-img-zoom', 'marm-img-illum',
+       '''
+    window %s | laplac | smooth rect1=5 rect2=5 |
+    bandpass flo=5 |
+    ''' % zoompar + igrey2d('color=i scalebar=n pclip=99'))
+
+
+Result('marm-pws-invs-img', 'marm-invs-img',
+       '''
+        sfpwsmooth dip=marm-vel-dip.rsf ns=6 order=2 eps=0.01 |
+        window %s  |
+        ''' % winpar + igrey2d('color=i scalebar=n pclip=99'))
+Result('marm-invs-img-zoom', 'marm-invs-img',
+       '''
+        sfpwsmooth dip=marm-vel-dip.rsf ns=6 order=2 eps=0.01 |
+        window %s  |
+        ''' % zoompar + igrey2d('color=i scalebar=n pclip=99'))
+
+
+Result('marm-ref-zoom', 'marm-ref',
+       'window %s |' % zoompar + igrey2d('color=i scalebar=n pclip=99'))
+
+
+Flow('marm-pws-b%dimg' % bn, ['marm-b2img', 'marm-vel-dip'],
+     'laplac | pwsmooth dip=${SOURCES[1]} ns=5')
+Result('marm-pws-b%dimg' % bn,
+       'window %s | math output=3e3*input |' % winpar +
+       igrey2d('color=i wantscalebar=y pclip=99 minval=-0.02 maxval=0.02\
+       barlabel=Amplitude barunit="*10e-7"'))
+Result('marm-pws-b2img-zoom', 'marm-pws-b2img',
+       'window %s | ' % zoompar + igrey2d('color=i scalebar=n pclip=99'))
+
+
+# ===============================================================================
+# ===============================================================================
+# 方案2：每个超级炮中包含两个单炮
+# bn = 4  # 混合度为4
+# ns = len(shotlst)   # 总的单炮数
+# nss = (int)(ns / bn)    # supergather个数
+# jss = nss
+#
+# for i in xrange(nss):
+#     tag = '-%02d' % (i + 1)
+#     bshot = 'marm-b%ddata' % bn + tag
+#     Flow(bshot, shotlst,
+#          '''
+#          add  scale=1,1 ${SOURCES[%d]} ${SOURCES[%d]}
+#          ${SOURCES[%d]} ${SOURCES[%d]}
+#          ''' % (i, i + jss, i + 2 * jss, i + 3 * jss),
+#          stdin=0)
+#
+# bshotlst = list(map(lambda x: 'marm-b%ddata-%02d' % (bn, x),
+#                     [i + 1 for i in xrange(nss)]))
+#
+# Flow('marm-b%ddata' % bn, bshotlst,
+#      'cat axis=3 ${SOURCES[1:%d]} | put d3=1 o3=1' % len(bshotlst))
+#
+# Result('marm-b%ddata' % bn, igrey3d('title frame1=2500 frame2=550 frame3=7'))
+
+End()
