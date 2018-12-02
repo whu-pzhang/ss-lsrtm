@@ -36,24 +36,24 @@ int main(int argc, char *argv[])
     if (!sf_getbool("adj", &adj)) adj = true;
     if (!sf_getint("niter", &niter)) niter = 5;
     if (!sf_getfloat("eps", &eps)) eps = 0.01;
-    if (!sf_getint("order", &order)) order=1;
-    if (!sf_getint("rect1", &rect1)) rect1=5;
-    if (!sf_getint("rect2", &rect2)) rect2=5;
-    if (!sf_getint("radius", &radius)) radius=10;
+    if (!sf_getint("order", &order)) order = 1;
+    if (!sf_getint("rect1", &rect1)) rect1 = 5;
+    if (!sf_getint("rect2", &rect2)) rect2 = 5;
+    if (!sf_getint("radius", &radius)) radius = 10;
 
     // setup I/O files
     sf_file Finp = sf_input("in");
     sf_file Fout = sf_output("out");
 
     sf_file Ferr = sf_output("error");
-    //sf_file Fres = sf_output("res"); // residual r = Lm - d
+    // sf_file Fres = sf_output("res"); // residual r = Lm - d
 
-    sf_file Fvel = sf_input("vel");  // migration velocity
-    sf_file Fwlt = sf_input("wlt");  // wavelet
-    sf_file Fsou = sf_input("sou");  // sources coordinates
-    sf_file Frec = sf_input("rec");  // receiver coordinates
+    sf_file Fvel = sf_input("vel"); // migration velocity
+    sf_file Fwlt = sf_input("wlt"); // wavelet
+    sf_file Fsou = sf_input("sou"); // sources coordinates
+    sf_file Frec = sf_input("rec"); // receiver coordinates
 
-    sf_file Fdip = sf_input("dip");  // structure dip file
+    sf_file Fdip = sf_input("dip"); // structure dip file
 
     // velocity dimensions
     if (!sf_histint(Fvel, "n1", &nz)) sf_error("No n1= in velocity");
@@ -117,16 +117,14 @@ int main(int argc, char *argv[])
     // read wavelet
     sf_floatread(wlt, nt, Fwlt);
     // 读入炮点位置
-    pt2dread1(Fsou, src2d, ns, 2);  // 只读取坐标信息（x,z），不读值value
+    pt2dread1(Fsou, src2d, ns, 2); // 只读取坐标信息（x,z），不读值value
     // 读入接收点位置
     pt2dread1(Frec, rec2d, nr, 2);
-
 
     // read dip
     sf_floatread(slope[0], nm, Fdip);
 
-    prertm2d_init(verb, nx, nz, nb, nt, ns, nss, nr, dx, dz, dt, ox, oz, vv,
-                  wlt, src2d, rec2d);
+    prertm2d_init(verb, nx, nz, nb, nt, ns, nss, nr, dx, dz, dt, ox, oz, vv, wlt, src2d, rec2d);
 
     // prertm2d_loop(adj, false, nz * nx, nt * nr * nss, mod, dat);
     //  least-squares migration
@@ -141,17 +139,14 @@ int main(int argc, char *argv[])
     pwsmooth_init(radius, nz, nx, order, eps);
     pwsmooth_set(slope);
 
-
-    sf_solver_prec(prertm2d_loop, sf_cgstep, pwsmooth_lop,
-                   nm, nm, nd, mod, dat,
-                   niter, eps, "verb", verb, "err", err, "end");
+    sf_solver_prec(prertm2d_loop, sf_cgstep, pwsmooth_lop, nm, nm, nd, mod, dat, niter, eps, "verb",
+                   verb, "err", err, "end");
     sf_cgstep_close();
 
     // conjugate gradient with shaping filter(regularization) to the input data
     // sf_conjgrad_init(nm, nm, nd, nd, eps, 1.e-6, true, false);
     // sf_conjgrad(NULL, prertm2d_loop, pwsmooth_lop, pp, mod, dat, niter);
     // sf_conjgrad_close();
-
 
     prertm2d_close();
     pwsmooth_close();
@@ -173,8 +168,10 @@ int main(int argc, char *argv[])
     free(slope);
     // free(pp);
     free(err);
-    free(ar); free(as);
-    free(ax); free(az);
+    free(ar);
+    free(as);
+    free(ax);
+    free(az);
 
 #ifdef _OPENMP
     double wall_clock_time_e = omp_get_wtime();
@@ -182,8 +179,7 @@ int main(int argc, char *argv[])
     double wall_clock_time_e = (double)clock() / CLOCKS_PER_SEC;
 #endif
     if (verb) {
-        fprintf(stderr, "\nElapsed time: %lf s\n",
-                wall_clock_time_e - wall_clock_time_s);
+        fprintf(stderr, "\nElapsed time: %lf s\n", wall_clock_time_e - wall_clock_time_s);
     }
 
     exit(EXIT_SUCCESS);

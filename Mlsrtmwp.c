@@ -39,25 +39,25 @@ int main(int argc, char *argv[])
     if (!sf_getbool("adj", &adj)) adj = true;
     if (!sf_getint("niter", &niter)) niter = 5;
     if (!sf_getfloat("eps", &eps)) eps = 0.01;
-    if (!sf_getint("order", &order)) order=1;
-    if (!sf_getint("rect1", &rect[0])) rect[0]=5;
-    if (!sf_getint("rect2", &rect[1])) rect[1]=5;
+    if (!sf_getint("order", &order)) order = 1;
+    if (!sf_getint("rect1", &rect[0])) rect[0] = 5;
+    if (!sf_getint("rect2", &rect[1])) rect[1] = 5;
     rect[2] = 1; // for 2D dip estimated
-    if (!sf_getint("radius", &radius)) radius=10;
+    if (!sf_getint("radius", &radius)) radius = 10;
 
     // setup I/O files
     sf_file Finp = sf_input("in");
     sf_file Fout = sf_output("out");
 
     sf_file Ferr = sf_output("error");
-    //sf_file Fres = sf_output("res"); // residual r = Lm - d
+    // sf_file Fres = sf_output("res"); // residual r = Lm - d
 
-    sf_file Fvel = sf_input("vel");  // migration velocity
-    sf_file Fwlt = sf_input("wlt");  // wavelet
-    sf_file Fsou = sf_input("sou");  // sources coordinates
-    sf_file Frec = sf_input("rec");  // receiver coordinates
+    sf_file Fvel = sf_input("vel"); // migration velocity
+    sf_file Fwlt = sf_input("wlt"); // wavelet
+    sf_file Fsou = sf_input("sou"); // sources coordinates
+    sf_file Frec = sf_input("rec"); // receiver coordinates
 
-    sf_file Fdip = sf_input("dip");  // structure dip file
+    sf_file Fdip = sf_input("dip"); // structure dip file
     sf_file Fwgt = sf_input("weight");
 
     dim = sf_filedims(Fvel, n);
@@ -85,7 +85,6 @@ int main(int argc, char *argv[])
     sf_axis at = sf_iaxa(Finp, 1);
     int nt = sf_n(at);
     float dt = sf_d(at);
-
 
     // setup output file headers
     sf_oaxa(Fout, az, 1);
@@ -129,7 +128,7 @@ int main(int argc, char *argv[])
     // read wavelet
     sf_floatread(wlt, nt, Fwlt);
     // 读入炮点位置
-    pt2dread1(Fsou, src2d, ns, 2);  // 只读取坐标信息（x,z），不读值value
+    pt2dread1(Fsou, src2d, ns, 2); // 只读取坐标信息（x,z），不读值value
     // 读入接收点位置
     pt2dread1(Frec, rec2d, nr, 2);
 
@@ -137,8 +136,7 @@ int main(int argc, char *argv[])
     sf_floatread(slope[0], nm, Fdip);
     sf_fileclose(Fdip);
 
-    prertm2d_init(verb, nx, nz, nb, nt, ns, nss, nr, dx, dz, dt, ox, oz, vv,
-                  wlt, src2d, rec2d);
+    prertm2d_init(verb, nx, nz, nb, nt, ns, nss, nr, dx, dz, dt, ox, oz, vv, wlt, src2d, rec2d);
 
     // prertm2d_loop(adj, false, nz * nx, nt * nr * nss, mod, dat);
     //  least-squares migration
@@ -153,17 +151,14 @@ int main(int argc, char *argv[])
     pwsmooth_init(radius, nz, nx, order, eps);
     pwsmooth_set(slope);
 
-    sf_solver_prec(prertm2d_loop, sf_cgstep, pwsmooth_lop,
-                    nm, nm, nd, mod, dat,
-                    niter, eps, "mwt", wgt, "verb", verb, "err", err, "end");
-
+    sf_solver_prec(prertm2d_loop, sf_cgstep, pwsmooth_lop, nm, nm, nd, mod, dat, niter, eps, "mwt",
+                   wgt, "verb", verb, "err", err, "end");
 
     // sf_conjgrad_init(nm, nm, nd, nd, eps, 1.e-6, verb, false);
 
     // sf_conjgrad(NULL, prertm2d_loop, pwsmooth_lop, pp, mod, dat, 1);
 
     // sf_conjgrad_close();
-
 
     // output image
     sf_floatwrite(mod, nz * nx, Fout);
@@ -180,8 +175,10 @@ int main(int argc, char *argv[])
     free(mod);
     free(*slope);
     free(slope);
-    free(az); free(ax);
-    free(as); free(ar);
+    free(az);
+    free(ax);
+    free(as);
+    free(ar);
     free(at);
 
 #ifdef _OPENMP
@@ -190,8 +187,7 @@ int main(int argc, char *argv[])
     double wall_clock_time_e = (double)clock() / CLOCKS_PER_SEC;
 #endif
     if (verb) {
-        fprintf(stderr, "\nElapsed time: %lf s\n",
-                wall_clock_time_e - wall_clock_time_s);
+        fprintf(stderr, "\nElapsed time: %lf s\n", wall_clock_time_e - wall_clock_time_s);
     }
 
     exit(EXIT_SUCCESS);

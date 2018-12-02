@@ -1,7 +1,6 @@
 /* least-squares pre-stack depth RTM migration and its adjoint
-*
-* without preconditioning
-*/
+ * without preconditioning
+ */
 #include <rsf.h>
 
 #include "lsprertm2d.h"
@@ -37,10 +36,10 @@ int main(int argc, char *argv[])
     sf_file Finp = sf_input("in");
     sf_file Fout = sf_output("out");
 
-    sf_file Fvel = sf_input("vel");  // migration velocity
-    sf_file Fwlt = sf_input("wlt");  // wavelet
-    sf_file Fsou = sf_input("sou");  // sources coordinates
-    sf_file Frec = sf_input("rec");  // receiver coordinates
+    sf_file Fvel = sf_input("vel"); // migration velocity
+    sf_file Fwlt = sf_input("wlt"); // wavelet
+    sf_file Fsou = sf_input("sou"); // sources coordinates
+    sf_file Frec = sf_input("rec"); // receiver coordinates
 
     sf_file Ferr = sf_output("error");
 
@@ -79,7 +78,6 @@ int main(int argc, char *argv[])
     sf_putint(Ferr, "n2", 1);
     sf_putint(Ferr, "n3", 1);
 
-
     int nb;
     if (!sf_getint("nb", &nb)) nb = 30;
 
@@ -92,7 +90,7 @@ int main(int argc, char *argv[])
     int nd = nt * nr * nss;
     float *dat = sf_floatalloc(nd);
     float *mod = sf_floatalloc(nm);
-        
+
     sf_floatread(dat, nd, Finp);
 
     float *err = sf_floatalloc(niter);
@@ -102,26 +100,22 @@ int main(int argc, char *argv[])
     // read wavelet
     sf_floatread(wlt, nt, Fwlt);
     // 读入炮点位置
-    pt2dread1(Fsou, src2d, ns, 2);  // 只读取坐标信息（x,z），不读值value
+    pt2dread1(Fsou, src2d, ns, 2); // 只读取坐标信息（x,z），不读值value
     // 读入接收点位置
     pt2dread1(Frec, rec2d, nr, 2);
 
-    prertm2d_init(verb, nx, nz, nb, nt, ns, nss, nr, dx, dz, dt, ox, oz, vv,
-                  wlt, src2d, rec2d);
+    prertm2d_init(verb, nx, nz, nb, nt, ns, nss, nr, dx, dz, dt, ox, oz, vv, wlt, src2d, rec2d);
 
     // prertm2d_loop(adj, false, nz * nx, nt * nr * nss, mod, dat);
     //  least-squares migration
-    sf_solver(prertm2d_loop, sf_cgstep, nm, nd,
-              mod, dat, niter,
-              "verb", verb, "err", err, "end");
+    sf_solver(prertm2d_loop, sf_cgstep, nm, nd, mod, dat, niter, "verb", verb, "err", err, "end");
 
     sf_cgstep_close();
     prertm2d_close();
 
-    // output image
+    // output result
     sf_floatwrite(mod, nz * nx, Fout);
     sf_floatwrite(err, niter, Ferr);
-
 
     // clean up
     free(*vv);
@@ -140,8 +134,7 @@ int main(int argc, char *argv[])
     double wall_clock_time_e = (double)clock() / CLOCKS_PER_SEC;
 #endif
     if (verb) {
-        fprintf(stderr, "\nElapsed time: %lf s\n",
-                wall_clock_time_e - wall_clock_time_s);
+        fprintf(stderr, "\nElapsed time: %lf s\n", wall_clock_time_e - wall_clock_time_s);
     }
 
     return EXIT_SUCCESS;
