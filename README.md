@@ -86,5 +86,4 @@ The corresponding relationships in the above figure are as follows:
 (e) -> 4
 
 (f) -> 5
-
-# Copyright
+ 
